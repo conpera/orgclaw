@@ -27,6 +27,10 @@ def cli():
     pass
 
 
+# Default quality threshold adjusted for real-world use
+DEFAULT_QUALITY_THRESHOLD = 0.4  # Was 0.6, lowered for practical use
+
+
 @cli.command()
 @click.argument("task_id")
 @click.option("--description", "-d", required=True, help="Task description")

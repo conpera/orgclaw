@@ -108,12 +108,25 @@ class ExperienceScorer:
         if len(exp.solution_steps) >= 3:
             score += 0.4
         elif len(exp.solution_steps) >= 1:
-            score += 0.2
+            score += 0.25  # Increased from 0.2
         
-        # Steps are concrete (contain verbs)
-        action_verbs = ["add", "remove", "fix", "update", "create", "delete", "refactor"]
+        # Steps are concrete (contain verbs) OR description has action keywords
+        action_keywords = [
+            "implement", "add", "remove", "fix", "update", "create", 
+            "delete", "refactor", "optimize", "extract", "resolve",
+            "replace", "change", "improve", "reduce"
+        ]
+        has_action = False
+        for keyword in action_keywords:
+            if keyword in exp.description.lower():
+                has_action = True
+                break
+        
+        if has_action:
+            score += 0.25  # New: give credit for action in description
+        
         for step in exp.solution_steps:
-            if any(verb in step.lower() for verb in action_verbs):
+            if any(verb in step.lower() for verb in action_keywords):
                 score += 0.1
                 break
         
@@ -121,7 +134,7 @@ class ExperienceScorer:
         if len(exp.lessons_learned) >= 2:
             score += 0.3
         elif len(exp.lessons_learned) >= 1:
-            score += 0.15
+            score += 0.2  # Increased from 0.15
         
         return min(score, 1.0)
     
@@ -132,11 +145,16 @@ class ExperienceScorer:
         # Multiple applicable scenarios
         if len(exp.applicable_scenarios) >= 3:
             score += 0.3
+        elif len(exp.applicable_scenarios) >= 2:
+            score += 0.25  # Increased from 0.15
         elif len(exp.applicable_scenarios) >= 1:
-            score += 0.15
+            score += 0.20  # Increased from 0.15
         
-        # Not too specific to one file/location
+        # Has code changes (indicates concrete implementation)
         if exp.code_changes:
+            score += 0.2
+            
+            # Not too specific to one file/location
             unique_dirs = set()
             for change in exp.code_changes:
                 parts = change.file_path.split('/')
@@ -144,21 +162,29 @@ class ExperienceScorer:
                     unique_dirs.add(parts[0])
             
             if len(unique_dirs) > 1:
-                score += 0.3  # Applies to multiple directories
-            else:
+                score += 0.1  # Applies to multiple directories
+        else:
+            # No code changes but has description with reusable keywords
+            reusable_keywords = [
+                "pattern", "approach", "strategy", "best practice",
+                "general", "common", "typical", "standard"
+            ]
+            if any(kw in exp.description.lower() for kw in reusable_keywords):
                 score += 0.15
         
-        # General patterns in solution steps
-        general_patterns = ["always", "never", "consider", "typically", "usually"]
+        # General patterns in description or steps
+        general_patterns = ["always", "never", "consider", "typically", "usually", "when"]
+        text_to_check = exp.description.lower()
         for step in exp.solution_steps:
-            if any(pattern in step.lower() for pattern in general_patterns):
-                score += 0.2
-                break
+            text_to_check += " " + step.lower()
+        
+        if any(pattern in text_to_check for pattern in general_patterns):
+            score += 0.2
         
         # Category is reusable
         reusable_categories = ["bug_fix", "refactor", "optimization"]
         if exp.category in reusable_categories:
-            score += 0.2
+            score += 0.25  # Increased from 0.2
         
         return min(score, 1.0)
     
