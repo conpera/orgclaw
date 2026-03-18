@@ -9,7 +9,7 @@ from typing import List, Optional
 import chromadb
 from chromadb.config import Settings
 
-from orgclaw.engine.analyzer.extractor import Experience
+from orgclaw.analyzer.extractor import Experience
 
 
 class KnowledgeStore:
@@ -213,11 +213,11 @@ class KnowledgeStore:
             # Reconstruct CodeChange objects
             code_changes = []
             for cc_data in data.get("code_changes", []):
-                from orgclaw.engine.analyzer.extractor import CodeChange
+                from orgclaw.analyzer.extractor import CodeChange
                 code_changes.append(CodeChange(**cc_data))
             
             # Reconstruct Experience
-            from orgclaw.engine.analyzer.extractor import Experience
+            from orgclaw.analyzer.extractor import Experience
             return Experience(
                 id=data["id"],
                 title=data["title"],

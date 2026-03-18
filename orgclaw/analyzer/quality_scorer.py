@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from orgclaw.engine.analyzer.extractor import Experience
+from orgclaw.analyzer.extractor import Experience
 
 
 @dataclass
