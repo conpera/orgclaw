@@ -225,6 +225,137 @@ def add(json_file: str):
     console.print(f"[green]Added experience with ID: {doc_id}[/green]")
 
 
+@cli.group()
+def team():
+    """Team experience sharing commands."""
+    pass
+
+
+@team.command("list")
+def team_list():
+    """List all teams."""
+    teams_dir = Path.home() / ".orgclaw" / "teams"
+    if not teams_dir.exists():
+        console.print("[yellow]No teams found[/yellow]")
+        return
+    
+    teams = [d.name for d in teams_dir.iterdir() if d.is_dir()]
+    
+    console.print(Panel("Teams", style="blue"))
+    for team_name in teams:
+        from orgclaw.team_share import TeamManager
+        manager = TeamManager(team_name)
+        stats = manager.get_stats()
+        console.print(f"\n[bold]{team_name}[/bold]")
+        console.print(f"  Members: {stats['members']}")
+        console.print(f"  Pending: {stats['pending']} | Approved: {stats['approved']} | Rejected: {stats['rejected']}")
+
+
+@team.command("stats")
+@click.argument("team_name")
+def team_stats(team_name: str):
+    """Show team statistics."""
+    from orgclaw.team_share import TeamManager
+    
+    manager = TeamManager(team_name)
+    stats = manager.get_stats()
+    
+    console.print(Panel(f"Team: {stats['team']}", style="blue"))
+    console.print(f"Members: {stats['members']}")
+    console.print(f"Pending reviews: {stats['pending']}")
+    console.print(f"Approved experiences: {stats['approved']}")
+    console.print(f"Rejected: {stats['rejected']}")
+
+
+@team.command("submit")
+@click.argument("team_name")
+@click.argument("experience_file")
+@click.option("--user", default="user", help="Submitter user ID")
+def team_submit(team_name: str, experience_file: str, user: str):
+    """Submit personal experience to team for review."""
+    from orgclaw.team_share import TeamManager
+    
+    path = Path(experience_file)
+    if not path.exists():
+        console.print(f"[red]File not found: {experience_file}[/red]")
+        sys.exit(1)
+    
+    with open(path) as f:
+        experience = json.load(f)
+    
+    manager = TeamManager(team_name)
+    team_exp_id = manager.submit_to_team(experience, user)
+    
+    console.print(f"[green]Submitted to team '{team_name}': {team_exp_id}[/green]")
+    console.print("Waiting for team review...")
+
+
+@team.command("pending")
+@click.argument("team_name")
+def team_pending(team_name: str):
+    """List pending reviews in team."""
+    from orgclaw.team_share import TeamManager
+    
+    manager = TeamManager(team_name)
+    pending = manager.list_pending()
+    
+    if not pending:
+        console.print("[yellow]No pending reviews[/yellow]")
+        return
+    
+    console.print(Panel(f"Pending Reviews in '{team_name}'", style="blue"))
+    
+    for exp in pending:
+        table = Table(show_header=False, box=None)
+        table.add_row("ID:", exp['id'])
+        table.add_row("Title:", exp['title'])
+        table.add_row("Author:", exp['author'])
+        table.add_row("Quality:", f"{exp['quality_score']:.2f}")
+        table.add_row("Votes:", str(len(exp['votes'])))
+        console.print(table)
+        console.print()
+
+
+@team.command("approved")
+@click.argument("team_name")
+def team_approved(team_name: str):
+    """List approved experiences in team."""
+    from orgclaw.team_share import TeamManager
+    
+    manager = TeamManager(team_name)
+    approved = manager.list_approved()
+    
+    if not approved:
+        console.print("[yellow]No approved experiences yet[/yellow]")
+        return
+    
+    console.print(Panel(f"Approved Experiences in '{team_name}'", style="blue"))
+    
+    for exp in approved[:10]:  # Show top 10
+        console.print(f"\n[bold]{exp['title']}[/bold]")
+        console.print(f"  Quality: {exp['quality_score']:.2f} | Author: {exp['author']}")
+        if exp.get('reviewers'):
+            console.print(f"  Reviewers: {', '.join(exp['reviewers'])}")
+
+
+@team.command("review")
+@click.argument("team_name")
+@click.argument("exp_id")
+@click.argument("decision", type=click.Choice(["approve", "reject"]))
+@click.option("--user", default="user", help="Reviewer user ID")
+def team_review(team_name: str, exp_id: str, decision: str, user: str):
+    """Review a team experience (approve/reject)."""
+    from orgclaw.team_share import TeamManager
+    
+    manager = TeamManager(team_name)
+    completed = manager.review(exp_id, user, decision)
+    
+    if completed:
+        console.print(f"[green]Review completed! Experience {decision}d.[/green]")
+    else:
+        console.print(f"[yellow]Vote recorded. Waiting for more reviews...[/yellow]")
+
+
 def main():
     """Entry point for CLI."""
     cli()

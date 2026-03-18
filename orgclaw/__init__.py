@@ -7,6 +7,7 @@ from orgclaw.analyzer.quality_scorer import ExperienceScorer
 from orgclaw.storage.vector_store import KnowledgeStore
 from orgclaw.patterns_client import PatternsClient, PatternEnricher, Pattern
 from orgclaw.auto_extract import AutoExtractor, on_task_complete, configure
+from orgclaw.team_share import TeamManager, TeamSync, TeamExperience
 
 __all__ = [
     "ExperienceExtractor",
@@ -18,4 +19,7 @@ __all__ = [
     "AutoExtractor",
     "on_task_complete",
     "configure",
+    "TeamManager",
+    "TeamSync",
+    "TeamExperience",
 ]
