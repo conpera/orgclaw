@@ -1,11 +1,21 @@
 """Experience extraction from Agent task results."""
 
 import re
+import logging
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
-import git
+# Optional dependency handling
+try:
+    import git
+    GIT_AVAILABLE = True
+except ImportError:
+    GIT_AVAILABLE = False
+    git = None
+    logging.warning("GitPython not available. Git integration disabled.")
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,9 +55,43 @@ class ExperienceExtractor:
         "feature": r"feat|feature|add|implement",
     }
     
+    # Sensitive patterns to filter out
+    SENSITIVE_PATTERNS = [
+        r"password[=:]\s*\S+",
+        r"api[_-]?key[=:]\s*\S+",
+        r"secret[=:]\s*\S+",
+        r"token[=:]\s*\S+",
+        r"-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----",
+    ]
+    
     def __init__(self, repo_path: Optional[str] = None):
         self.repo_path = repo_path
-        self.repo = git.Repo(repo_path) if repo_path else None
+        self.repo = None
+        if GIT_AVAILABLE and repo_path:
+            try:
+                self.repo = git.Repo(repo_path)
+            except Exception as e:
+                logger.warning(f"Failed to load git repo: {e}")
+    
+    def _sanitize_text(self, text: str) -> str:
+        """Remove sensitive information from text."""
+        import re
+        sanitized = text
+        for pattern in self.SENSITIVE_PATTERNS:
+            sanitized = re.sub(pattern, "[REDACTED]", sanitized, flags=re.IGNORECASE)
+        return sanitized
+    
+    def _validate_input(self, task_id: str, task_description: str) -> bool:
+        """Validate input parameters."""
+        if not task_id or not isinstance(task_id, str):
+            logger.error("Invalid task_id")
+            return False
+        if not task_description or not isinstance(task_description, str):
+            logger.error("Invalid task_description")
+            return False
+        if len(task_description) > 10000:  # Max length
+            logger.warning("Description too long, truncating")
+        return True
     
     def extract_from_task(
         self,
@@ -65,6 +109,13 @@ class ExperienceExtractor:
         Returns:
             Extracted Experience or None if extraction failed
         """
+        # Validate input
+        if not self._validate_input(task_id, task_description):
+            return None
+        
+        # Sanitize description
+        task_description = self._sanitize_text(task_description)
+        
         # Determine category from description
         category = self._detect_category(task_description)
         

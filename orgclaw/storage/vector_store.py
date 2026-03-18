@@ -2,18 +2,32 @@
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
-import chromadb
-from chromadb.config import Settings
+# Optional dependency handling
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    CHROMADB_AVAILABLE = False
+    chromadb = None
+    Settings = None
+    logging.warning("ChromaDB not available. Vector storage disabled.")
 
 from orgclaw.analyzer.extractor import Experience
 
+logger = logging.getLogger(__name__)
+
 
 class KnowledgeStore:
-    """Stores and retrieves experiences using vector embeddings."""
+    """Stores and retrieves experiences using vector embeddings.
+    
+    Falls back to simple JSON storage if ChromaDB is not available.
+    """
     
     def __init__(self, persist_dir: Optional[str] = None):
         """Initialize the knowledge store.
@@ -22,24 +36,37 @@ class KnowledgeStore:
             persist_dir: Directory to persist vector database
         """
         if persist_dir is None:
-            persist_dir = str(Path.home() / ".claw-engine" / "knowledge")
+            persist_dir = str(Path.home() / ".orgclaw" / "vector_store")
         
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize ChromaDB
-        self.client = chromadb.Client(
-            Settings(
-                persist_directory=str(self.persist_dir),
-                anonymized_telemetry=False,
-            )
-        )
+        self.client = None
+        self.collection = None
+        self._fallback_storage: List[dict] = []
         
-        # Get or create collection
-        self.collection = self.client.get_or_create_collection(
-            name="experiences",
-            metadata={"hnsw:space": "cosine"}
-        )
+        if CHROMADB_AVAILABLE:
+            try:
+                # Initialize ChromaDB
+                self.client = chromadb.Client(
+                    Settings(
+                        persist_directory=str(self.persist_dir),
+                        anonymized_telemetry=False,
+                    )
+                )
+                
+                # Get or create collection
+                self.collection = self.client.get_or_create_collection(
+                    name="experiences",
+                    metadata={"hnsw:space": "cosine"}
+                )
+                logger.info("ChromaDB initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize ChromaDB: {e}. Using fallback storage.")
+                self.client = None
+                self.collection = None
+        else:
+            logger.info("Using fallback JSON storage (ChromaDB not available)")
     
     def add_experience(self, experience: Experience) -> str:
         """Add an experience to the store.
@@ -64,14 +91,36 @@ class KnowledgeStore:
             "json": json.dumps(asdict(experience)),
         }
         
-        # Add to collection
-        self.collection.add(
-            ids=[doc_id],
-            documents=[document],
-            metadatas=[metadata],
-        )
+        if self.collection:
+            # Use ChromaDB
+            try:
+                self.collection.add(
+                    ids=[doc_id],
+                    documents=[document],
+                    metadatas=[metadata],
+                )
+            except Exception as e:
+                logger.error(f"Failed to add to ChromaDB: {e}")
+                # Fallback to JSON
+                self._fallback_add(doc_id, metadata)
+        else:
+            # Fallback storage
+            self._fallback_add(doc_id, metadata)
         
         return doc_id
+    
+    def _fallback_add(self, doc_id: str, metadata: dict):
+        """Add to fallback JSON storage."""
+        metadata['doc_id'] = doc_id
+        self._fallback_storage.append(metadata)
+        
+        # Persist to file
+        try:
+            fallback_file = self.persist_dir / "experiences_fallback.json"
+            with open(fallback_file, 'w') as f:
+                json.dump(self._fallback_storage, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save fallback storage: {e}")
     
     def query(
         self,
@@ -91,27 +140,75 @@ class KnowledgeStore:
         Returns:
             List of matching experiences
         """
-        # Build where clause
-        where = {}
-        if category:
-            where["category"] = category
-        if min_quality > 0:
-            where["quality_score"] = {"$gte": min_quality}
+        if self.collection:
+            return self._query_chromadb(query_text, n_results, category, min_quality)
+        else:
+            return self._query_fallback(query_text, n_results, category, min_quality)
+    
+    def _query_chromadb(self, query_text, n_results, category, min_quality) -> List[Experience]:
+        """Query using ChromaDB."""
+        try:
+            # Build where clause
+            where = {}
+            if category:
+                where["category"] = category
+            if min_quality > 0:
+                where["quality_score"] = {"$gte": min_quality}
+            
+            results = self.collection.query(
+                query_texts=[query_text],
+                n_results=n_results,
+                where=where if where else None,
+            )
+            
+            # Convert to Experience objects
+            experiences = []
+            if results["metadatas"] and results["metadatas"][0]:
+                for metadata in results["metadatas"][0]:
+                    exp = self._metadata_to_experience(metadata)
+                    if exp:
+                        experiences.append(exp)
+            
+            return experiences
+        except Exception as e:
+            logger.error(f"ChromaDB query failed: {e}")
+            return self._query_fallback(query_text, n_results, category, min_quality)
+    
+    def _query_fallback(self, query_text, n_results, category, min_quality) -> List[Experience]:
+        """Fallback query using simple keyword matching."""
+        import re
         
-        # Query
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results,
-            where=where if where else None,
-        )
+        # Simple keyword matching
+        query_words = set(re.findall(r'\w+', query_text.lower()))
         
-        # Convert to Experience objects
+        results = []
+        for item in self._fallback_storage:
+            # Check category filter
+            if category and item.get('category') != category:
+                continue
+            
+            # Check quality filter
+            if item.get('quality_score', 0) < min_quality:
+                continue
+            
+            # Simple text matching
+            item_text = item.get('title', '') + ' ' + item.get('category', '')
+            item_words = set(re.findall(r'\w+', item_text.lower()))
+            
+            # Calculate simple overlap score
+            overlap = len(query_words & item_words)
+            if overlap > 0:
+                item['_match_score'] = overlap
+                results.append(item)
+        
+        # Sort by match score and return top n
+        results.sort(key=lambda x: x.get('_match_score', 0), reverse=True)
+        
         experiences = []
-        if results["metadatas"] and results["metadatas"][0]:
-            for metadata in results["metadatas"][0]:
-                exp = self._metadata_to_experience(metadata)
-                if exp:
-                    experiences.append(exp)
+        for item in results[:n_results]:
+            exp = self._metadata_to_experience(item)
+            if exp:
+                experiences.append(exp)
         
         return experiences
     

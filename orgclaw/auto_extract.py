@@ -1,6 +1,8 @@
 """Automatic experience extraction hooks."""
 
 import os
+import json
+import logging
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -8,6 +10,13 @@ from datetime import datetime
 
 from orgclaw.analyzer.extractor import ExperienceExtractor
 from orgclaw.analyzer.quality_scorer import ExperienceScorer
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class AutoExtractor:
@@ -97,21 +106,49 @@ class AutoExtractor:
         
         return result
     
-    def _save_experience(self, experience) -> Path:
-        """Save experience to personal directory."""
-        import json
+    def _save_experience(self, experience) -> Optional[Path]:
+        """Save experience to personal directory.
+        
+        Args:
+            experience: Experience object to save
+            
+        Returns:
+            Path to saved file or None if failed
+        """
         from dataclasses import asdict
         
-        filename = f"{experience.id}-{experience.category}.json"
-        filepath = self.personal_dir / filename
-        
-        # Convert to dict
-        data = asdict(experience)
-        
-        with open(filepath, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-        
-        return filepath
+        try:
+            # Sanitize filename to prevent path traversal
+            safe_id = Path(str(experience.id)).name
+            safe_category = Path(str(experience.category)).name
+            filename = f"exp-{safe_id}-{safe_category}.json"
+            filepath = self.personal_dir / filename
+            
+            # Ensure file is within personal_dir (security check)
+            try:
+                filepath.relative_to(self.personal_dir)
+            except ValueError:
+                logger.error(f"Invalid path: {filepath} is outside personal_dir")
+                return None
+            
+            # Convert to dict
+            data = asdict(experience)
+            
+            # Atomic write (write to temp then rename)
+            temp_path = filepath.with_suffix('.tmp')
+            with open(temp_path, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            temp_path.rename(filepath)
+            
+            logger.info(f"Experience saved: {filepath}")
+            return filepath
+            
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to save experience: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error saving experience: {e}")
+            return None
     
     def _print_result(self, result: Dict, experience):
         """Print result to console."""
