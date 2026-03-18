@@ -43,11 +43,22 @@ store.add_experience(experience)
 results = store.query("memory leak debugging", n_results=5)
 ```
 
-### 4. OpenClaw 集成
+### 4. 查询团队模式库
+```python
+from orgclaw import PatternsClient
+
+client = PatternsClient()
+patterns = client.search_by_category("coding")
+# or
+patterns = client.search_by_tag("api")
+```
+
+### 5. OpenClaw 集成
 ```python
 # Automatically triggered when Agent task completes
-skill = OrgClawSkill()
+skill = OrgClawSkill(config={"enable_patterns": True})
 result = skill.on_task_complete(task_result)
+# Returns experience + related patterns from conpera-patterns
 ```
 
 ---
@@ -61,7 +72,7 @@ openclaw skill install orgclaw
 # Or manually
 git clone https://github.com/conpera/orgclaw.git
 cd orgclaw
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ---
@@ -78,6 +89,10 @@ orgclaw extract task-123 \
 
 # Search knowledge base
 orgclaw search "memory leak" --limit 5
+
+# Search conpera-patterns
+orgclaw patterns "api" --category coding
+orgclaw patterns "testing" --tag pytest
 
 # View stats
 orgclaw stats

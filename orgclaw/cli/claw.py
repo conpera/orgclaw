@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claw Engine CLI."""
+"""OrgClaw CLI."""
 
 import json
 import sys
@@ -14,9 +14,7 @@ from rich.syntax import Syntax
 # Add parent to path for development
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from orgclaw.engine.analyzer.extractor import ExperienceExtractor
-from orgclaw.engine.analyzer.quality_scorer import ExperienceScorer
-from orgclaw.engine.storage.vector_store import KnowledgeStore
+from orgclaw import ExperienceExtractor, ExperienceScorer, KnowledgeStore, PatternsClient
 
 
 console = Console()
@@ -25,7 +23,7 @@ console = Console()
 @click.group()
 @click.version_option(version="0.1.0")
 def cli():
-    """Claw Engine - Experience collection and processing for OpenClaw."""
+    """OrgClaw - Organization knowledge federation for OpenClaw."""
     pass
 
 
@@ -116,6 +114,45 @@ def search(query: str, category: str, limit: int):
 
 
 @cli.command()
+@click.argument("query")
+@click.option("--category", "-c", help="Filter by category")
+@click.option("--tag", "-t", help="Filter by tag")
+def patterns(query: str, category: str, tag: str):
+    """Search conpera-patterns."""
+    console.print(Panel(f"Searching patterns: {query}", style="blue"))
+    
+    client = PatternsClient()
+    
+    if category:
+        results = client.search_by_category(category)
+    elif tag:
+        results = client.search_by_tag(tag)
+    else:
+        # Try as tag
+        results = client.search_by_tag(query)
+    
+    if not results:
+        console.print("[yellow]No patterns found[/yellow]")
+        return
+    
+    table = Table(title=f"Found {len(results)} patterns")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title")
+    table.add_column("Category", style="green")
+    table.add_column("Status", style="yellow")
+    
+    for pattern in results:
+        table.add_row(
+            pattern.id[:30],
+            pattern.title[:40],
+            pattern.category,
+            pattern.status,
+        )
+    
+    console.print(table)
+
+
+@cli.command()
 def stats():
     """Show knowledge base statistics."""
     store = KnowledgeStore()
@@ -159,7 +196,7 @@ def add(json_file: str):
         data = json.load(f)
     
     # Reconstruct Experience
-    from orgclaw.engine.analyzer.extractor import Experience, CodeChange
+    from orgclaw.analyzer.extractor import Experience, CodeChange
     
     code_changes = [CodeChange(**cc) for cc in data.get("code_changes", [])]
     
