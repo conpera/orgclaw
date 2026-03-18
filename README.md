@@ -65,14 +65,32 @@ result = skill.on_task_complete(task_result)
 
 ## 📦 安装
 
-```bash
-# Install as OpenClaw skill
-openclaw skill install orgclaw
+### 方法 1: 一键安装 (推荐)
 
-# Or manually
-git clone https://github.com/conpera/orgclaw.git
-cd orgclaw
-pip install -e ".[dev]"
+```bash
+curl -fsSL https://raw.githubusercontent.com/conpera/orgclaw/main/install.py | python3
+```
+
+### 方法 2: OpenClaw CLI
+
+```bash
+openclaw skill install conpera/orgclaw
+```
+
+### 方法 3: 手动安装
+
+```bash
+git clone https://github.com/conpera/orgclaw.git ~/.openclaw/skills/orgclaw
+cd ~/.openclaw/skills/orgclaw
+python3 install.py
+```
+
+### 验证安装
+
+```bash
+orgclaw --version          # 查看版本
+orgclaw stats              # 查看统计
+test_skill.py              # 运行测试
 ```
 
 ---
